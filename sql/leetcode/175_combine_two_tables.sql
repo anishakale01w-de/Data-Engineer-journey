@@ -1,6 +1,7 @@
 --Leet code question 175
 --LINK : https://leetcode.com/problems/combine-two-tables/
 /*
+Easy
 Table: Person
 
 +-------------+---------+
