@@ -52,3 +52,20 @@ Explanation: a@b.com is repeated two times.
 --SOLUTION
 
 SELECT email FROM person group by email having count(email)>1;
+
+-- ============================================
+-- KEY LEARNING
+-- ============================================
+-- COUNT(*) vs COUNT(column_name):
+--
+-- COUNT(*)        → counts ALL rows including NULLs
+-- COUNT(email)    → counts only NON-NULL values
+--
+-- In this problem both give same result because
+-- email is guaranteed NOT NULL.
+--
+-- But in real production tables with messy data,
+-- COUNT(email) is safer and more explicit.
+-- Always prefer COUNT(column_name) as a habit
+-- when you care about a specific field.
+-- ============================================
