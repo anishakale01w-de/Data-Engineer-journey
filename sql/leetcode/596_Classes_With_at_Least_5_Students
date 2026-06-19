@@ -56,3 +56,5 @@ Explanation:
 - Biology has 1 student, so we do not include it.
 - Computer has 1 student, so we do not include it.
 */
+--SOLUTION
+SELECT CLASS FROM  Courses group by class having count(*)>=5;
