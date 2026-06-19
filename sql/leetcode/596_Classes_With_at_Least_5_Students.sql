@@ -59,7 +59,7 @@ Explanation:
 --SOLUTION
 SELECT CLASS FROM  Courses group by class having count(*)>=5;
 OR
-SELECT CLASS FROM  Courses group by class having count(*)>=5;
+SELECT CLASS FROM  Courses group by class having count(class)>=5;
 
 -- ============================================
 -- KEY LEARNING
@@ -67,13 +67,13 @@ SELECT CLASS FROM  Courses group by class having count(*)>=5;
 -- COUNT(*) vs COUNT(column_name):
 --
 -- COUNT(*)        → counts ALL rows including NULLs
--- COUNT(email)    → counts only NON-NULL values
+-- COUNT(class)    → counts only NON-NULL values
 --
 -- In this problem both give same result because
--- email is guaranteed NOT NULL.
+-- class is guaranteed NOT NULL.
 --
 -- But in real production tables with messy data,
--- COUNT(email) is safer and more explicit.
+-- COUNT(class) is safer and more explicit.
 -- Always prefer COUNT(column_name) as a habit
 -- when you care about a specific field.
 -- ============================================
