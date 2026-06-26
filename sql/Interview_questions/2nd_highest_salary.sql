@@ -10,3 +10,5 @@ SELECT max(salary) FROM employee_tbl where salary <(select  max(salary) from emp
 SELECT emp_id, emp_name from emp_tbl where salary = (SELECT max(salary) FROM employee_tbl 
   where salary <(select  max(salary) from employee_tbl) 
   );
+
+-- usin dense rank 
