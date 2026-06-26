@@ -11,4 +11,18 @@ SELECT emp_id, emp_name from emp_tbl where salary = (SELECT max(salary) FROM emp
   where salary <(select  max(salary) from employee_tbl) 
   );
 
--- usin dense rank 
+-- using dense rank 
+select salary from (select dense_rank() over (partition by department order by salary desc) as rnk)
+where rnk = 2
+--
+--Approach 3 Using qualify (works in redshift, bigquery, snowflake, teradat)
+  
+select emp_id, emp_name, salary from emp_tbl 
+qualify dense_rank() over (partition by department order by salary desc) = 2 
+
+--key learning 
+Memory trick:
+
+WHERE = filter rows
+HAVING = filter groups
+QUALIFY = filter window results
