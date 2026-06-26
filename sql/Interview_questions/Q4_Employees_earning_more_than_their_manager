@@ -1,5 +1,0 @@
-Q4 — Employees earning more than their manager
-Table: employees (emp_id, emp_name, department_id, salary, manager_id)
-Note — manager_id refers to emp_id of the manager. So the same table has both employee and manager data!
-
-select emp_id 
