@@ -8,3 +8,5 @@ and a wide range of built-in methods for adding, removing, and modifying element
 order_ids = ["ORD001", "ORD002", "ORD003", "ORD001"]
 
 Real life memory 😄 An Amazon order log — order IDs come in one after another, in sequence, and the same order ID can technically repeat if logged twice by mistake. That's a List.
+
+Important interview note: Lists are mutable — meaning the original list changes when you use .append(), .remove(), .sort(). No new list is created.
