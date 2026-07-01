@@ -56,3 +56,5 @@ Explanation: Only products 1 and 3 are both low fat and recyclable.
 --SOLUTION
 
 SELECT product_id from products where low_fats = 'Y' AND recyclable = 'Y'
+
+--revision 1/7/26
