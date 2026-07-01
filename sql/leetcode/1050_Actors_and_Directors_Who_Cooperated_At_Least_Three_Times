@@ -54,3 +54,5 @@ Explanation: The only pair is (1, 1) where they cooperated exactly 3 times.
 
 --SOLUTION
 select actor_id, director_id from ActorDirector group by 1,2 having count(timestamp)>=3
+
+--revision = 1/7/26

@@ -66,3 +66,5 @@ For 2020-12-7, toyota gets leads = [0] and partners = [1, 2] while honda gets le
 select date_id, make_name, count(distinct lead_id) as unique_leads , count(distinct partner_id) as unique_partners
 from dailysales
 group by 1,2;
+
+--revision 1/7/26

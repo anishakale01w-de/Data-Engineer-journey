@@ -63,3 +63,5 @@ Output:
 --SOLUTION
 SELECT name as Customers FROM customers a LEFT JOIN orders b ON a.id = b.customerId where a.id not in (select distinct customerId as id
  from orders)
+
+----revision 1/7/26
