@@ -1,0 +1,335 @@
+PySpark — Complete Revision Notes
+
+1. What is PySpark?
+PySpark = Python API for Apache Spark
+Spark is a distributed computing framework — processes huge data across multiple machines in parallel. PySpark lets you write Spark code in Python.
+Key connection to your work:
+AWS Glue uses PySpark under the hood — everything you do in Glue jobs is PySpark running behind the scenes!
+
+2. Two Main Data Structures
+RDD — Resilient Distributed Dataset (old way)
+
+Low level, harder to use
+Just a collection of objects distributed across cluster
+No schema, no automatic optimization
+Rarely used directly anymore
+
+DataFrame (new way — what you use in Glue)
+
+Like a SQL table with rows and columns
+Has schema
+Automatically optimized by Spark engine
+Can run SQL queries directly on it
+
+python# Creating a DataFrame
+df = spark.read.csv("s3://bucket/file.csv", header=True)
+df = spark.read.parquet("s3://bucket/file.parquet")
+
+3. Lazy Evaluation — Most Important Concept ⭐
+Always asked in interviews!
+Transformations — lazy, don't execute immediately
+Just build a plan, nothing actually runs:
+
+filter()
+select()
+groupBy()
+join()
+withColumn()
+orderBy()
+drop()
+
+Actions — trigger actual execution
+Runs the entire plan at once:
+
+show()
+count()
+collect()
+write()
+save()
+first()
+take(n)
+
+pythondf2 = df.filter(df.salary > 50000)   # transformation — nothing happens
+df3 = df2.select("emp_name", "salary")  # still nothing!
+df3.show()  # action — NOW entire plan executes ✅
+Why lazy?
+Spark optimizes the entire plan before running — more efficient than executing step by step!
+
+4. Most Commonly Used PySpark Operations
+python# Reading data
+df = spark.read.csv("path", header=True, inferSchema=True)
+df = spark.read.parquet("path")
+df = spark.read.json("path")
+df = spark.read.parquet("s3://bucket/folder/")
+
+# Selecting columns
+df.select("emp_name", "salary")
+df.select(df["emp_name"], df["salary"])
+
+# Filtering rows
+df.filter(df.salary > 50000)
+df.filter("salary > 50000")          # SQL style also works!
+df.where(df.salary > 50000)          # same as filter!
+df.filter((df.salary > 50000) & (df.department == "Engineering"))
+df.filter((df.salary > 50000) | (df.department == "Finance"))
+
+# Adding and modifying columns
+df.withColumn("annual_sal", df.salary * 12)
+df.withColumnRenamed("salary", "emp_salary")
+df.drop("unwanted_column")
+
+# CASE WHEN equivalent
+from pyspark.sql.functions import when
+df.withColumn("grade",
+    when(df.salary > 80000, "A")
+    .when(df.salary > 60000, "B")
+    .otherwise("C")
+)
+
+# Aggregations
+from pyspark.sql.functions import avg, sum, count, max, min
+df.groupBy("department").agg(
+    avg("salary").alias("avg_sal"),
+    count("emp_id").alias("emp_count"),
+    sum("salary").alias("total_sal"),
+    max("salary").alias("max_sal")
+)
+
+# Joins
+df1.join(df2, df1.dept_id == df2.dept_id, "inner")
+df1.join(df2, df1.dept_id == df2.dept_id, "left")
+# join types: inner, left, right, outer, cross, semi, anti
+
+# Sorting
+df.orderBy(df.salary.desc())
+df.orderBy(df.salary.asc())
+df.orderBy("salary", ascending=False)
+
+# Null handling
+df.fillna(0)
+df.fillna({"salary": 0, "name": "Unknown"})
+df.dropna()
+df.dropna(subset=["salary"])
+
+# Duplicates
+df.dropDuplicates()
+df.dropDuplicates(["emp_name", "department"])
+
+5. DynamicFrame vs DataFrame — Glue Specific ⭐
+Why DynamicFrame exists:
+Real world data is messy! Imagine reading a CSV with mixed types:
+emp_id | salary
+1      | 50000          — integer
+2      | 60000          — integer
+3      | "not available" — string! 😱
+4      | 70000          — integer
+Normal DataFrame fails here. DynamicFrame handles it gracefully!
+Key differences:
+DynamicFrame:
+
+Schema is flexible — each row is independent
+Handles messy inconsistent data without failing
+Slightly slower performance
+Best for raw data from S3 or databases
+Has special features — resolveChoice, relationalize
+
+DataFrame:
+
+Fixed schema defined upfront
+Fails or corrupts on inconsistent data
+Faster — automatically optimized
+Best for clean structured data after initial processing
+Full PySpark API — filter, join, groupBy, window functions
+
+Choice Types — DynamicFrame special feature:
+When a column has mixed types, DynamicFrame marks it as choice instead of failing:
+python# View schema — shows choice type
+dyf.printSchema()
+# Output:
+# salary: choice
+#     - long: 50000
+#     - string: "not available"
+
+# Resolve Option 1 — cast everything to one type
+dyf = dyf.resolveChoice(specs=[("salary", "cast:long")])
+
+# Resolve Option 2 — make separate columns per type
+dyf = dyf.resolveChoice(specs=[("salary", "make_cols")])
+# Creates: salary_long, salary_string
+
+# Resolve Option 3 — keep only one type, drop others
+dyf = dyf.resolveChoice(specs=[("salary", "project:long")])
+Converting between them:
+python# DynamicFrame to DataFrame
+df = dyf.toDF()
+
+# DataFrame to DynamicFrame
+dyf = DynamicFrame.fromDF(df, glueContext, "output_name")
+Typical Glue script flow:
+pythonfrom awsglue.context import GlueContext
+from awsglue.dynamicframe import DynamicFrame
+from pyspark.context import SparkContext
+
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+
+# Step 1 — Read as DynamicFrame (handles messy data safely)
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_database",
+    table_name = "my_table"
+)
+
+# Step 2 — Convert to DataFrame for transformations
+df = dyf.toDF()
+
+# Step 3 — Do all transformations using PySpark
+df_filtered = df.filter(df.salary > 50000)
+df_final = df_filtered.withColumn("annual_sal", df_filtered.salary * 12)
+
+# Step 4 — Convert back to DynamicFrame for writing
+dyf_output = DynamicFrame.fromDF(df_final, glueContext, "output")
+
+# Step 5 — Write to S3 or Redshift
+glueContext.write_dynamic_frame.from_options(
+    frame = dyf_output,
+    connection_type = "s3",
+    connection_options = {"path": "s3://my-bucket/output/"},
+    format = "parquet"
+)
+Flow to remember:
+Read → DynamicFrame (safe for messy data)
+     ↓ .toDF()
+Transform → DataFrame (all PySpark operations)
+     ↓ DynamicFrame.fromDF()
+Write → DynamicFrame (Glue writer needs this format)
+Other DynamicFrame operations:
+pythondyf.printSchema()
+dyf.count()
+dyf.drop_fields(["unwanted_column"])
+dyf.rename_field("old_name", "new_name")
+dyf.filter(lambda x: x["salary"] > 50000)
+dyf.relationalize("root", "s3://temp/")   # flattens nested/array columns
+
+6. Partitioning in PySpark
+What is it?
+Splits data into chunks processed in parallel across workers:
+1 million rows
+    ↓ split into 4 partitions
+[250k rows] [250k rows] [250k rows] [250k rows]
+  Worker1     Worker2     Worker3     Worker4
+    ↓ all process simultaneously
+  Results combined at end
+In-memory partitioning:
+python# Check current partitions
+df.rdd.getNumPartitions()
+
+# repartition — increase OR decrease, full shuffle
+df.repartition(10)
+
+# coalesce — only decrease, no full shuffle, faster
+df.coalesce(5)
+repartition vs coalesce:
+repartition:
+
+Can increase or decrease partitions
+Does full data shuffle across workers
+Gives perfectly even distribution
+Slower due to shuffle
+Use when increasing partitions or need even distribution
+
+coalesce:
+
+Can only decrease partitions
+Minimal shuffle — just merges existing partitions
+Slightly uneven distribution
+Much faster than repartition
+Use when decreasing partitions before writing to S3
+
+Storage partitioning on S3:
+python# Write with folder partitioning
+df.write.partitionBy("year", "month").parquet("s3://bucket/data/")
+
+# Creates folder structure:
+# s3://bucket/data/year=2024/month=01/file.parquet
+# s3://bucket/data/year=2024/month=02/file.parquet
+# s3://bucket/data/year=2023/month=12/file.parquet
+Partition Pruning:
+Query filters on year=2024 — Spark jumps directly to that folder, skips everything else entirely. Reads 90% less data!
+Common problems:
+Too many partitions — small file problem:
+1 million rows → 10,000 partitions = 10,000 tiny files on S3
+Slow downstream reads
+Fix: coalesce before writing
+
+Too few partitions:
+1 billion rows → 2 partitions = only 2 workers active
+Very slow processing
+Fix: repartition to increase parallelism
+
+Data skew:
+Engineering dept: 900,000 rows — one worker overloaded!
+Finance dept: 50,000 rows
+HR dept: 50,000 rows
+Fix: repartition by a more even column like emp_id
+
+7. Caching
+python# Cache in memory
+df.cache()
+
+# Persist with control over storage
+df.persist()                              # memory + disk
+df.persist(StorageLevel.MEMORY_ONLY)     # memory only
+df.persist(StorageLevel.DISK_ONLY)       # disk only
+
+# Remove from cache when done
+df.unpersist()
+Without cache — computed twice, wasteful:
+pythondf_filtered = df.filter(df.salary > 50000)
+df_filtered.count()   # computes df_filtered from scratch
+df_filtered.show()    # recomputes df_filtered again! 😱
+With cache — computed once:
+pythondf_filtered = df.filter(df.salary > 50000)
+df_filtered.cache()   # marks for caching
+df_filtered.count()   # computes + stores in cache
+df_filtered.show()    # reads from cache ✅
+Rule: Cache when you use the same DataFrame more than once in a job — avoids recomputation and saves time!
+
+8. Running SQL on PySpark
+python# Register DataFrame as temporary SQL view
+df.createOrReplaceTempView("employees")
+
+# Run full SQL directly on it
+result = spark.sql("""
+    SELECT department, AVG(salary) as avg_sal
+    FROM employees
+    WHERE salary > 50000
+    GROUP BY department
+    HAVING AVG(salary) > 60000
+    ORDER BY avg_sal DESC
+""")
+
+result.show()
+Why useful:
+If you know SQL well you can use PySpark without memorizing all DataFrame API methods. SQL runs on top of PySpark engine with same performance — same result, just different syntax!
+
+9. Common Interview Questions
+What is lazy evaluation?
+Transformations don't execute until an action is called. Spark builds the full execution plan first, optimizes it, then runs everything at once when action is triggered.
+RDD vs DataFrame?
+DataFrame has schema and automatic optimization via Spark's Catalyst optimizer. RDD is low level with no schema and no automatic optimization. Always prefer DataFrame unless you need very low level control.
+DynamicFrame vs DataFrame?
+DynamicFrame is Glue specific and handles schema inconsistencies and mixed data types gracefully. DataFrame is standard PySpark — faster but needs clean consistent schema. In Glue jobs we read as DynamicFrame, convert to DataFrame for transformations, convert back for writing.
+repartition vs coalesce?
+repartition does full shuffle and can increase or decrease partitions — use when increasing. coalesce does minimal shuffle and can only decrease — use before writing to S3 since it's much faster.
+filter vs where in PySpark?
+Exactly the same! Both do identical filtering. Just different names for the same operation.
+When to cache?
+When the same DataFrame is used multiple times in a job. Without caching, Spark recomputes from scratch each time an action is called.
+What is partition pruning?
+When data is stored with partitioning on S3 and query filters on that partition column — Spark skips irrelevant folders entirely and reads only matching partitions. Massive reduction in data read.
+What is data skew?
+When one partition has much more data than others. One worker gets overloaded while others sit idle. Fix by repartitioning on a more evenly distributed column.
+
+10. Interview Answer — connect to your project
+"In our Glue jobs we follow a standard pattern. We read raw data as DynamicFrame from the Glue catalog because source data from Teradata and Denodo sometimes had inconsistent schemas — DynamicFrame handles that without failing. We resolve any choice types, then convert to DataFrame using toDF() for our transformation logic — filters, joins, aggregations using PySpark. We use push down predicates to leverage S3 partitioning and read only relevant data. Before writing output we coalesce to control file count on S3 and avoid small file problems. Then convert back to DynamicFrame before writing to Redshift. For jobs that process the same dataset multiple times we cache to avoid recomputation. This pattern combined with incremental loads reduced our Glue job runtime from 18 hours to 8-9 hours."
