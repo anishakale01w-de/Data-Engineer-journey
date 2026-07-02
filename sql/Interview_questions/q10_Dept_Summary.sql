@@ -26,3 +26,23 @@ GROUP BY b.department_name
 HAVING AVG(a.salary) > 50000
 ORDER BY emp_cnt DESC;      
 
+--keypoints and cross questions
+/*Cross questions:
+
+"Why INNER JOIN and not LEFT JOIN?" → INNER JOIN because we only want departments that HAVE employees. LEFT JOIN would include empty departments with NULL counts.
+"What if you want departments with NO employees too?"
+
+sql-- Flip to departments as left table
+FROM departments b
+LEFT JOIN employees a
+ON a.department_id = b.department_id
+GROUP BY b.department_name
+HAVING AVG(a.salary) > 50000 
+OR AVG(a.salary) IS NULL;
+
+"Can you use emp_cnt alias in HAVING?" → No! HAVING runs before SELECT. Must repeat COUNT(a.emp_id) > 5 in HAVING if needed.
+"What if you want departments with more than 5 employees AND avg salary > 50000?"
+
+sqlHAVING COUNT(a.emp_id) > 5 
+AND AVG(a.salary) > 50000;
+*/
