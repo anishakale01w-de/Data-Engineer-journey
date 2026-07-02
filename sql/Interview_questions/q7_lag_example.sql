@@ -5,6 +5,7 @@ Also show the difference between the two salaries.
 
 select emp_id, emp_name, salary,
 lag(salary) over (partition by department order by joining_date) as emp_just_before
+  ( salary - lag(salary) over (partition by department order by joining_date)) as diff
 from employees;
 
 /*
