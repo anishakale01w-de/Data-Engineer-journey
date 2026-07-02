@@ -1,0 +1,260 @@
+Here's your complete Redshift optimization notes:
+
+Redshift Performance Optimization — Complete Notes
+
+1. DISTKEY — Data Distribution Across Nodes
+What is it?
+Controls which Redshift compute node stores which rows. When two tables have the same DISTKEY, matching rows land on the same node — no network shuffling during JOINs.
+Types:
+sql-- Key distribution (most common)
+DISTKEY(column_name)
+-- Use when: frequent JOINs on that column
+
+-- ALL distribution
+DISTSTYLE ALL
+-- Use when: small lookup/dimension tables (< few million rows, rarely updated)
+-- Copies entire table to every node
+
+-- EVEN distribution  
+DISTSTYLE EVEN
+-- Use when: no clear join column, table rarely joined
+-- Round robin across nodes
+
+-- AUTO
+DISTSTYLE AUTO
+-- Let Redshift decide based on query patterns
+Real scenario — WITHOUT DISTKEY (slow):
+loss_data:      Node1: policy 1,4,7    Node2: policy 2,5,8
+premium_data:   Node1: policy 2,6,11   Node2: policy 1,7,13
+
+JOIN on policy_id → policy 1 is on Node1 (loss) but Node2 (premium)
+→ Data must travel across network for every row
+→ 10 million policies = massive network shuffle
+→ Query takes 45 minutes 😱
+Real scenario — WITH DISTKEY(policy_id) (fast):
+loss_data:      Node1: policy 1,4,7    Node2: policy 2,5,8
+premium_data:   Node1: policy 1,4,7    Node2: policy 2,5,8
+
+JOIN on policy_id → policy 1 is on Node1 in BOTH tables ✅
+→ JOIN happens locally, zero network traffic
+→ Query takes 3 minutes 🚀
+Golden rule:
+
+If two large tables are frequently JOINed → give them the same DISTKEY column
+
+Small lookup table scenario — DISTSTYLE ALL:
+WITHOUT ALL:
+line_of_business: Node1: GL,WC   Node2: Auto,ADP   Node3: DOT
+loss_data on Node1 has Auto policies → must fetch from Node2 → slow!
+
+WITH DISTSTYLE ALL:
+line_of_business: Node1: ALL 50 rows   Node2: ALL 50 rows   Node3: ALL 50 rows
+Every node has complete lookup → instant JOIN, no network calls ✅
+When to use DISTSTYLE ALL:
+
+Table has less than few million rows
+Table is rarely updated
+Table is frequently JOINed with large tables
+Examples: date dimension, LOB lookup, currency codes, product codes
+
+
+2. SORTKEY — Sort Order Within Each Node
+What is it?
+Controls how data is physically sorted within each node. Makes range queries and ORDER BY faster by enabling zone map pruning — Redshift skips entire blocks of data that don't match the filter.
+Types:
+sql-- Compound sort key (most common)
+COMPOUND SORTKEY(col1, col2)
+-- First column is most important
+-- Best when queries filter on leading column
+
+-- Interleaved sort key (rare)
+INTERLEAVED SORTKEY(col1, col2)
+-- All columns equally important
+-- More VACUUM maintenance needed
+Real scenario — WITHOUT SORTKEY (slow):
+Node 1 blocks (random order):
+Block 1: dates 2022-05, 2024-02, 2021-08, 2023-11
+Block 2: dates 2023-03, 2022-09, 2024-01, 2021-12
+...1000 blocks total
+
+Query: WHERE valuation_date BETWEEN '2024-01-01' AND '2024-03-31'
+→ Redshift has no idea which blocks have 2024 dates
+→ Must scan ALL 1000 blocks
+→ Query takes 20 minutes 😱
+Real scenario — WITH SORTKEY(valuation_date) (fast):
+Node 1 blocks (sorted by date):
+Block 1:  2021-01 → 2021-06  ← skip! outside range
+Block 2:  2021-07 → 2021-12  ← skip!
+Block 3:  2022-01 → 2022-06  ← skip!
+Block 4:  2022-07 → 2022-12  ← skip!
+Block 5:  2023-01 → 2023-06  ← skip!
+Block 6:  2023-07 → 2023-12  ← skip!
+Block 7:  2024-01 → 2024-03  ← READ THIS ✅
+Block 8:  2024-04 onwards    ← stop here!
+
+→ Only reads 1 block out of 1000
+→ Query takes 45 seconds 🚀
+This is called Zone Map Pruning:
+Redshift stores min/max values per block (zone map). With SORTKEY, it knows exactly which blocks to skip — like a book index!
+
+3. Complete Table Design Example
+sql-- Large fact table
+CREATE TABLE loss_data (
+    policy_id       VARCHAR(50)   ENCODE zstd,
+    valuation_date  DATE          ENCODE zstd,
+    lob_code        VARCHAR(20)   ENCODE bytedict,
+    loss_amount     DECIMAL       ENCODE zstd,
+    premium         DECIMAL       ENCODE zstd
+)
+DISTKEY(policy_id)                          -- fast JOIN with premium_data
+COMPOUND SORTKEY(valuation_date, lob_code); -- fast date + LOB filters
+
+-- Large related table — SAME DISTKEY!
+CREATE TABLE premium_data (
+    policy_id       VARCHAR(50),
+    premium_amount  DECIMAL,
+    line_of_business VARCHAR(20)
+)
+DISTKEY(policy_id)              -- same as loss_data = no shuffle on JOIN ✅
+COMPOUND SORTKEY(valuation_date);
+
+-- Small lookup table
+CREATE TABLE line_of_business (
+    lob_code        VARCHAR(20),
+    lob_full_name   VARCHAR(100),
+    department_code VARCHAR(10)
+)
+DISTSTYLE ALL;                  -- copied to all nodes = instant JOIN ✅
+
+4. VACUUM and ANALYZE — Maintenance
+Why needed?
+
+DELETE/UPDATE marks rows as deleted but doesn't free space
+New INSERTs break the SORTKEY order
+Query planner needs fresh statistics
+
+sql-- VACUUM — reclaims space + re-sorts data
+VACUUM my_table;
+
+-- Types of VACUUM
+VACUUM FULL my_table;         -- full resort + reclaim space (most thorough)
+VACUUM SORT ONLY my_table;    -- only resort, don't reclaim space
+VACUUM DELETE ONLY my_table;  -- only reclaim deleted space, don't resort
+
+-- ANALYZE — updates statistics for query planner
+ANALYZE my_table;
+-- Always run after bulk loads!
+When to run:
+OperationRunAfter bulk INSERTANALYZEAfter DELETE/UPDATEVACUUM DELETE ONLYAfter many new INSERTs (sort broken)VACUUM SORT ONLYScheduled maintenanceVACUUM FULL + ANALYZE
+
+5. Push Down Predicates in Glue
+What is it?
+Tells Glue to only read specific S3 partitions — skips irrelevant data before it even loads into memory.
+Without push down predicate:
+python# Reads ENTIRE table — all years, all months
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_db",
+    table_name = "orders"
+)
+df = dyf.toDF().filter("year = '2024'")
+# Read 1TB, used only 100GB 😱
+With push down predicate:
+python# Only reads year=2024/month=01 folder from S3
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_db",
+    table_name = "orders",
+    push_down_predicate = "(year == '2024' and month == '01')"
+)
+# Read only 100GB directly ✅ 🚀
+Key rule:
+Push down predicate only works on partition columns — columns used in partitionBy() when data was written to S3.
+Your project example:
+python# Instead of reading all valuation dates
+# Only read specific valuation date
+push_down_predicate = f"(valuation_date == '{target_date}')"
+
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_db",
+    table_name = "loss_data",
+    push_down_predicate = push_down_predicate
+)
+
+6. Incremental Loads
+Full load vs Incremental load:
+Full load (old way):
+Every run → Read ALL data → Transform ALL → Write ALL
+Example: 18 hours every single day
+Problem: 90% of data hasn't changed — wasted effort!
+
+Incremental load (new way):
+Every run → Read only NEW/CHANGED data → Transform → Write
+Example: 8-9 hours
+Only process what's actually new!
+Method 1 — Glue Job Bookmarks:
+pythonjob = Job(glueContext)
+job.init(args['JOB_NAME'], args)
+
+# Glue automatically remembers last processed position
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_db",
+    table_name = "orders",
+    transformation_ctx = "datasource"  # bookmark tracks this
+)
+
+# process data...
+
+job.commit()  # saves bookmark for next run
+Method 2 — Date filtering:
+pythonvaluation_date = args['valuation_date']  # passed as job parameter
+
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_db",
+    table_name = "orders",
+    push_down_predicate = f"(valuation_date == '{valuation_date}')"
+)
+Method 3 — Redshift watermark:
+sql-- Only insert records newer than last processed date
+INSERT INTO target_table
+SELECT * FROM source_table s
+WHERE s.order_date > (
+    SELECT MAX(order_date)
+    FROM target_table  -- watermark = last processed date
+);
+
+7. Coalesce before writing
+Problem:
+python# Default Spark creates one file per partition
+df.write.parquet("s3://bucket/output/")
+# 200 partitions = 200 tiny 5MB files on S3
+# Too many files = slow reads later 😱
+Solution:
+python# Reduce to manageable number of files before writing
+df.coalesce(10).write.parquet("s3://bucket/output/")
+# Result: 10 files of ~100MB each ✅
+
+# With partitioning
+df.coalesce(5)\
+  .write\
+  .partitionBy("year", "month")\
+  .mode("overwrite")\
+  .parquet("s3://bucket/output/")
+# 5 files per year/month folder ✅
+Ideal file sizes for S3:
+Too small  < 10MB   : too many files, slow S3 reads
+Ideal      128-512MB: best balance
+Too large  > 1GB    : hard to parallelize reads
+repartition vs coalesce:
+python# Increasing partitions → repartition (full shuffle)
+df.repartition(10)
+
+# Decreasing partitions → coalesce (no shuffle, faster)
+df.coalesce(5)
+
+8. Quick Reference Cheat Sheet
+ConceptWhatWhen to useDISTKEY(col)Rows with same value go to same nodeFrequent JOIN columnDISTSTYLE ALLCopy entire table to all nodesSmall lookup tablesDISTSTYLE EVENRound robin distributionNo clear join columnSORTKEY(col)Sort rows within nodeRange queries, date filtersCOMPOUND SORTKEYMulti-column sort, first column priorityFilter on leading column mostlyVACUUMReclaim space + resortAfter DELETE/UPDATE/bulk loadANALYZEUpdate statisticsAfter bulk loadsPush down predicateSkip S3 partitions at read timeGlue reading partitioned S3 dataIncremental loadOnly process new dataDaily pipeline runsCoalesceReduce output file countBefore writing to S3
+
+9. Memory Anchors 🧠
+ScenarioProblemSolutionTrickTwo large tables JOIN slowNetwork shuffleSame DISTKEY on bothSame key = same node = no travelDate range filter slowScans all blocksSORTKEY on dateSorted = skip blocks = fastSmall lookup table slowFetches from other nodesDISTSTYLE ALLSmall table = give everyone a copyToo many S3 filesSlow downstream readscoalesce before writeMerge small filesFull load too slowReprocessing unchanged dataIncremental + push downOnly read what's new
+
+10. Interview Answer — connect to your project
+"In our Liberty Mutual pipelines, loss_data and premium_data were large tables frequently joined on policy_id. We set DISTKEY(policy_id) on both so matching policy records always landed on the same Redshift node — eliminating network shuffling during JOINs. We added COMPOUND SORTKEY(valuation_date) since actuarial queries always filter by valuation date — Redshift's zone map pruning skips irrelevant blocks entirely. For small lookup tables like line_of_business we used DISTSTYLE ALL so every node had a local copy. After each pipeline run we ran VACUUM and ANALYZE to maintain sort order and statistics. On the Glue side we used push down predicates to only read relevant S3 partitions and switched from full loads to incremental loads — together this reduced our runtime from 18 hours to 8-9 hours and cut costs by 35%."
