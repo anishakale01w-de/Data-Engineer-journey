@@ -1,0 +1,262 @@
+
+# AWS Glue Interview Q&A — Based on Your Resume
+
+## Core Glue Concepts
+
+**Q. What is AWS Glue and what have you used it for?**
+
+AWS Glue is a fully managed serverless ETL service by AWS. It runs PySpark jobs on managed infrastructure — no server setup or maintenance needed. In my work at Liberty Mutual I used Glue to build 8+ end to end data pipelines that extracted data from Teradata and Denodo sources, transformed it using PySpark, and loaded it into Redshift for ML model consumption and analytics dashboards.
+
+---
+
+**Q. What are the main components of AWS Glue?**
+
+Glue Data Catalog — central metadata repository storing table definitions, schemas, column types and partition information. Acts as a unified metadata layer used by Glue, Athena, EMR and Redshift Spectrum.
+
+Glue Crawlers — automatically scan data sources like S3 or databases, detect schema and partitions, and update the Data Catalog. We scheduled crawlers to run after pipeline completion so downstream consumers always had fresh metadata.
+
+Glue ETL Jobs — PySpark scripts that do the actual data transformation. Run on managed Spark clusters. Two types — Spark jobs for large scale processing and Python Shell jobs for lightweight tasks.
+
+Glue Job Bookmarks — tracks last processed data position to enable incremental loads.
+
+Glue Triggers — schedule or event based job execution.
+
+Glue Workflows — visual pipeline builder to chain jobs and crawlers together.
+
+---
+
+**Q. What is a DynamicFrame and how is it different from a DataFrame?**
+
+DynamicFrame is Glue specific. It handles schema inconsistencies and mixed data types gracefully — when a column has mixed types like integer and string it marks it as a choice type instead of failing. Best for reading raw messy data from S3 or databases.
+
+DataFrame is standard PySpark — faster and optimized but requires clean consistent schema upfront.
+
+In our Glue jobs we always read as DynamicFrame from the Glue catalog, convert to DataFrame using toDF() for transformations, then convert back to DynamicFrame using DynamicFrame.fromDF() before writing to Redshift or S3.
+
+---
+
+**Q. What is a choice type in DynamicFrame and how do you handle it?**
+
+When a column has inconsistent data types across rows — like some rows have integer salary and some rows have string "not available" — DynamicFrame marks that column as choice type instead of failing. You resolve it using resolveChoice:
+
+```python
+# Cast everything to one type
+dyf = dyf.resolveChoice(specs=[("salary", "cast:long")])
+
+# Create separate columns per type
+dyf = dyf.resolveChoice(specs=[("salary", "make_cols")])
+# Creates salary_long and salary_string
+
+# Keep only one type
+dyf = dyf.resolveChoice(specs=[("salary", "project:long")])
+```
+
+---
+
+**Q. What is a Glue job bookmark and how did you use it?**
+
+Job bookmark tracks the last successfully processed data position. On next run Glue automatically reads only new data added since the last bookmark — enabling incremental processing without writing custom watermark logic.
+
+In our pipelines we enabled bookmarks to avoid reprocessing historical data on every run. After processing completes we call job.commit() to save the bookmark position for the next run.
+
+```python
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
+
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_db",
+    table_name = "my_table",
+    transformation_ctx = "datasource"
+)
+
+# process data
+
+job.commit()
+```
+
+---
+
+**Q. What is a push down predicate and how did you use it in your project?**
+
+Push down predicate tells Glue to only read specific S3 partitions matching the filter — skips irrelevant data before it even enters memory. Only works on partition columns — columns used in partitionBy when data was written to S3.
+
+In our Liberty Mutual pipelines data was partitioned by valuation date on S3. Instead of reading the entire dataset and filtering later we pushed down the valuation date filter so Glue only read the relevant partition. This was one of the key optimizations that reduced our job runtime significantly.
+
+```python
+push_down_predicate = f"(valuation_date == '{target_date}')"
+
+dyf = glueContext.create_dynamic_frame.from_catalog(
+    database = "my_db",
+    table_name = "loss_data",
+    push_down_predicate = push_down_predicate
+)
+```
+
+---
+
+## Based on Your Resume
+
+---
+
+**Q. You mentioned optimizing Glue jobs from full load to incremental — walk me through how you did that.**
+
+Our original Glue jobs were full load — every run read the entire Teradata dataset, transformed everything and reloaded Redshift. This took 18 hours daily and was expensive since 90% of data hadn't changed.
+
+We switched to incremental by:
+- Partitioning S3 data by valuation date using partitionBy
+- Using push down predicates to only read the current valuation date partition
+- Passing valuation date as a job parameter from Step Functions
+- Using MERGE in Redshift stored procedures to upsert only changed records instead of full reload
+
+This reduced runtime from 18 hours to 8-9 hours and cut cloud costs by 35%.
+
+---
+
+**Q. You built Glue ingestion connectors for Cortex S3 and Denodo — what does that mean?**
+
+Denodo is a data virtualization platform — it sits on top of multiple source databases and presents a unified virtual view. Standard Glue connectors don't support Denodo directly so we built a custom Glue connector that connected to Denodo's API, extracted data, and ingested it into our pipeline.
+
+For Cortex S3 we built a connector that understood the specific file format and folder structure of the Cortex system's S3 output and ingested it into our Glue Data Catalog correctly.
+
+Following existing connector patterns in the codebase made this manageable — I understood the pattern, adapted it for the new source, tested with sample data and validated output counts.
+
+---
+
+**Q. You mentioned AWS Fargate for Python feature engineering modules — what did you do there?**
+
+We had Python feature engineering modules written using pandas and numpy that processed policy level data to generate features for ML models. These modules were containerized using Docker and deployed as AWS Fargate tasks — serverless containers that run on demand without managing EC2 instances.
+
+Step Functions triggered these Fargate tasks as part of the pipeline workflow. Once Glue finished loading data into Redshift, Step Functions triggered the Fargate container which ran the feature engineering Python script and wrote outputs back to Redshift for ML model consumption.
+
+---
+
+**Q. How did you use AWS Step Functions in your project?**
+
+Step Functions orchestrated our entire pipeline workflow. We built State Machines with:
+
+Parallel branch logic — multiple Glue jobs for different lines of business like General Liability, Workers Compensation and Auto ran in parallel instead of sequentially — saving significant time.
+
+Retry and catch logic — if a Glue job failed, Step Functions automatically retried up to 3 times before marking it as failed and triggering an SNS alert.
+
+SNS notification — once all pipeline steps completed successfully, Step Functions published a message to SNS which triggered an email to the downstream batch team. This eliminated manual handoffs where someone had to check if pipeline was done before starting their work.
+
+---
+
+**Q. What is the Teradata to Redshift migration you worked on?**
+
+The IWE Migration involved modernizing 8 legacy Teradata pipelines to AWS Redshift and Delta Lake. The challenge was that Teradata used PAL — a proprietary scripting language — and had complex logic spread across 18 source tables.
+
+We reverse engineered the PAL logic, understood the business rules, rewrote them as Redshift stored procedures and PySpark transformations, and consolidated 18 source tables into 3-4 cleaner target tables. We validated every output against the original Teradata results using our validation framework to ensure 99.99% accuracy before sign-off. This met the Teradata deprecation deadline and significantly reduced infrastructure costs.
+
+---
+
+**Q. What is your data validation framework and how does it work?**
+
+Before our framework the validation process was manual — analysts compared counts in Excel which was slow, error prone and not scalable.
+
+We built a Redshift based validation framework with four levels:
+
+Count check — source row count must match target row count within an acceptable threshold.
+
+Column check — mandatory columns have no nulls, numeric columns are within expected ranges, date columns have valid formats.
+
+File check — source file exists, arrived on time, file size is not zero.
+
+Exhibit check — business level aggregations like total premium or total loss must match between source and target within a defined tolerance.
+
+Results were stored in a validation results table with pass or fail status, discrepancy counts and timestamps. Stakeholders reviewed this table for sign-off instead of manual Excel comparison. We consistently achieved 99.99% match rates across all pipelines.
+
+---
+
+**Q. What is Delta Lake and how did you use it?**
+
+Delta Lake is an open source storage layer that adds ACID transaction support, schema enforcement and time travel capabilities on top of regular Parquet files stored in S3. It makes S3 behave more like a database.
+
+In our migration some pipelines used Delta Lake as an intermediate layer — data was first landed in Delta Lake on S3 from Teradata, then processed by Glue and loaded into Redshift. Delta Lake gave us the ability to do upserts on S3 data which regular Parquet doesn't support, and time travel let us query historical versions of data for debugging.
+
+---
+
+**Q. What worker types does Glue support and which did you use?**
+
+Standard — general purpose, balanced memory and compute.
+G.1X — memory optimized, good for memory intensive transformations like large joins.
+G.2X — high memory, for very large datasets.
+G.025X — quarter DPU, for lightweight Python shell jobs.
+
+For our large Glue jobs processing multi million row datasets we used G.1X workers to avoid out of memory errors during joins and aggregations. We also enabled auto scaling so Glue could add workers automatically during peak processing without manual intervention.
+
+---
+
+**Q. How do you handle failures in your Glue pipelines?**
+
+At Glue job level — enable retry in job settings, typically 2-3 retries with exponential backoff.
+
+At Step Functions level — Catch and Retry blocks on each state. If Glue job fails after all retries, Step Functions catches the error, sends SNS alert to the team and marks the workflow as failed so downstream jobs don't run on bad data.
+
+At data level — our validation framework catches data quality issues. If validation fails the pipeline stops and raises an alert rather than loading bad data into Redshift.
+
+For monitoring we used CloudWatch metrics and logs — job duration, DPU usage, error rates. Set up CloudWatch alarms for abnormal job durations or failure rates.
+
+---
+
+**Q. What is Liquibase and how did you use it?**
+
+Liquibase is a database schema versioning and migration tool. Instead of running SQL scripts manually on the database, Liquibase manages all schema changes — CREATE TABLE, ALTER TABLE, adding columns — through versioned changelog files stored in Git.
+
+In our project all Redshift stored procedures, DML scripts and schema changes were managed through Liquibase. Benefits — full version history of every schema change, ability to rollback changes, consistent deployments across environments like dev, QA and production, and audit trail of who changed what and when. Part of our CI/CD pipeline using Bamboo.
+
+---
+
+**Q. What is the difference between Glue Workflow and AWS Step Functions?**
+
+Glue Workflow is Glue specific — it chains Glue jobs and crawlers together visually within the Glue console. Simpler to set up for purely Glue based pipelines.
+
+Step Functions is a general purpose orchestration service — can coordinate any AWS service including Glue, Lambda, Fargate, SNS, SQS, EMR and more. More powerful, supports complex branching logic, parallel execution, retry and catch, human approval steps. Better for complex multi-service pipelines.
+
+We used Step Functions because our pipeline involved Glue jobs, Fargate containers and SNS notifications — Step Functions handled all of them in one workflow.
+
+---
+
+**Q. How do you monitor your Glue jobs?**
+
+CloudWatch Logs — all Glue job logs go to CloudWatch. Check for errors, warnings and custom log messages.
+
+CloudWatch Metrics — job duration, DPU usage, memory usage, number of records processed. Set alarms for abnormal values.
+
+Glue Job Run Dashboard — in Glue console, shows all job runs with status, duration, DPU usage.
+
+Spark UI — detailed Spark execution plan, DAG visualization, stage timings, task level metrics. Useful for finding bottlenecks and skewed partitions.
+
+SNS Alerts — our Step Functions sent success and failure notifications to the team automatically.
+
+---
+
+## Cross Questions to Expect
+
+---
+
+**Q. If your Glue job is running slow what steps do you take to debug?**
+
+First check CloudWatch logs for any errors or warnings. Then check Spark UI to see which stage is slowest — look for tasks that take much longer than others which indicates data skew. Check number of partitions — too few means low parallelism, too many means small file overhead. Check if push down predicates are being applied — verify in logs that Glue is not reading more data than needed. Check worker type — may need to upgrade to G.1X if memory errors are occurring. Check if same DataFrame is being recomputed multiple times — add caching. Finally check if output is creating too many small files — add coalesce before write.
+
+---
+
+**Q. What is the difference between Glue and EMR?**
+
+Glue is fully managed serverless — no cluster management, automatic scaling, pay per job run. Best for standard ETL jobs, easier to set up and maintain.
+
+EMR is managed Hadoop/Spark cluster — you manage cluster size, instance types, scaling. More control and flexibility, better for complex Spark workloads, machine learning, streaming. More expensive to manage but more powerful.
+
+Use Glue for standard ETL pipelines. Use EMR when you need more control over Spark configuration or running non-ETL workloads.
+
+---
+
+**Q. Can Glue connect to on-premise databases?**
+
+Yes using Glue Connections with VPC configuration and AWS Direct Connect or VPN. Glue can connect to on-premise databases like Oracle, SQL Server or Teradata through JDBC connections within a private network. In our migration we used this to connect Glue to the legacy Teradata system during the migration period.
+
+---
+
+Save this to your notes file! This covers everything an Infosys interviewer would ask about Glue based on your resume. 💪
+
+Ready to do mock interview round next? That's the most important thing before tomorrow! 👇
