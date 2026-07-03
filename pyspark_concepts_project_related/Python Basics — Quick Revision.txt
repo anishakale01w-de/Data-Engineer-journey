@@ -1,0 +1,91 @@
+Python Basics — Quick Revision
+
+Data types and structures:
+python# List — ordered, mutable, allows duplicates
+my_list = [1, 2, 3, 2, 1]
+my_list.append(4)
+my_list.remove(2)
+
+# Tuple — ordered, immutable, allows duplicates
+my_tuple = (1, 2, 3)
+# cannot change after creation
+
+# Set — unordered, no duplicates
+my_set = {1, 2, 3, 2}  # becomes {1, 2, 3}
+
+# Dictionary — key value pairs
+my_dict = {"name": "Anisha", "salary": 50000}
+my_dict["department"] = "Engineering"  # add key
+my_dict.get("name")  # safe access
+Mutable vs Immutable:
+
+Mutable — can change after creation — list, dict, set
+Immutable — cannot change — tuple, string, int
+
+
+Lambda, map, filter:
+python# Lambda — one line anonymous function
+square = lambda x: x * 2
+print(square(5))  # 10
+
+# Map — apply function to all items
+salaries = [50000, 60000, 70000]
+doubled = list(map(lambda x: x * 2, salaries))
+# [100000, 120000, 140000]
+
+# Filter — keep items that match condition
+high_sal = list(filter(lambda x: x > 55000, salaries))
+# [60000, 70000]
+
+List comprehension:
+python# Instead of loop
+squares = [x*x for x in range(5)]
+# [0, 1, 4, 9, 16]
+
+# With condition
+high_sal = [x for x in salaries if x > 55000]
+# [60000, 70000]
+
+Exception handling:
+pythontry:
+    result = 10 / 0
+except ZeroDivisionError as e:
+    print(f"Error: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+finally:
+    print("Always runs — good for cleanup")
+
+Pandas basics:
+pythonimport pandas as pd
+
+# Read data
+df = pd.read_csv("file.csv")
+
+# Basic operations
+df.head()           # first 5 rows
+df.shape            # rows, columns
+df.dtypes           # column types
+df.describe()       # statistics
+
+# Filter
+df[df["salary"] > 50000]
+
+# Select columns
+df[["emp_name", "salary"]]
+
+# Add column
+df["annual_sal"] = df["salary"] * 12
+
+# Group by
+df.groupby("department")["salary"].mean()
+
+# Handle nulls
+df.fillna(0)
+df.dropna()
+
+# Merge (like SQL JOIN)
+pd.merge(df1, df2, on="emp_id", how="left")
+
+# Drop duplicates
+df.drop_duplicates(subset=["emp_name", "department"])
