@@ -1,0 +1,126 @@
+ETL Concepts — Quick Revision
+
+ETL vs ELT:
+ETL — Extract Transform Load
+
+Extract data from source
+Transform it (clean, filter, aggregate)
+Load into destination
+Traditional approach — used in your Teradata pipelines
+Transform happens BEFORE loading
+
+ELT — Extract Load Transform
+
+Extract data from source
+Load raw data into destination first
+Transform inside the destination
+Modern approach — used in Redshift, Snowflake
+Transform happens AFTER loading
+Faster since modern warehouses are powerful enough to transform at scale
+
+
+Batch vs Streaming:
+Batch processing:
+
+Processes data in chunks at scheduled intervals
+Example — run pipeline every night at 12 AM
+Your Glue jobs = batch processing
+Higher latency but simpler to build
+Good for — daily reports, end of day processing
+
+Streaming processing:
+
+Processes data continuously as it arrives
+Example — real time fraud detection
+Tools — Kafka, Kinesis, Spark Streaming
+Low latency but complex to build
+Good for — real time dashboards, alerts
+
+
+Full Load vs Incremental Load:
+Full load:
+
+Every run reads ALL data from source
+Simple but slow and expensive
+Good for small tables or first time load
+Your old Teradata pipelines used this — 18 hours!
+
+Incremental load:
+
+Every run reads only NEW or CHANGED data since last run
+Faster and cheaper
+Uses watermark, job bookmarks, or date filters
+What you migrated TO — 8-9 hours!
+
+
+Idempotency — always asked!
+Definition — running the same pipeline multiple times gives the same result. No duplicates, no data loss.
+Example:
+Run pipeline Monday → loads 100 records
+Pipeline fails Tuesday halfway
+Re-run Tuesday → should still give correct result, not duplicate Monday's data
+How to achieve idempotency:
+
+Use UPSERT instead of INSERT (insert if not exists, update if exists)
+Truncate and reload for full loads
+Use unique keys to detect duplicates
+Partition overwrite — overwrite specific partition only
+
+sql-- UPSERT in Redshift
+MERGE INTO target_table
+USING source_table
+ON target.policy_id = source.policy_id
+WHEN MATCHED THEN UPDATE SET ...
+WHEN NOT MATCHED THEN INSERT ...
+
+SCD — Slowly Changing Dimensions:
+Very commonly asked for Data Engineers!
+SCD Type 1 — Overwrite:
+
+Just update the record, no history kept
+Simple but loses historical data
+
+Old: Anisha | Engineering | 50000
+New: Anisha | Finance | 60000  ← just overwrite
+SCD Type 2 — Add new row (most common):
+
+Keep old record, add new record with dates
+Full history preserved
+
+Anisha | Engineering | 50000 | 2021-01-01 | 2023-06-30 | N (inactive)
+Anisha | Finance     | 60000 | 2023-07-01 | 9999-12-31 | Y (active)
+SCD Type 3 — Add new column:
+
+Keep current and previous value only
+Limited history
+
+Anisha | current_dept: Finance | prev_dept: Engineering
+
+Data Quality checks — your validation framework:
+Types of checks:
+
+Count check — source count vs target count should match
+Column check — no nulls in mandatory columns, values within range
+File check — file exists, file size not zero
+Exhibit check — business level validation, totals match
+
+Your framework achieved 99.99% match rate — mention this confidently!
+
+Data Pipeline concepts:
+Upstream vs Downstream:
+
+Upstream — source systems that feed your pipeline
+Downstream — systems that consume your pipeline output
+Example: Teradata (upstream) → Glue pipeline → Redshift → ML models (downstream)
+
+Pipeline orchestration:
+
+Scheduling and managing pipeline execution order
+Tools — AWS Step Functions (your experience!), Apache Airflow, AWS EventBridge
+Handles dependencies — run B only after A succeeds
+Handles failures — retry, alert, skip
+
+Lineage:
+
+Tracking where data came from and how it transformed
+Important for debugging and compliance
