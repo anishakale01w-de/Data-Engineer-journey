@@ -1,0 +1,97 @@
+BLOCK 2 — Amazon Bedrock Awareness
+Priority: Good to Know ⭐
+
+What is Amazon Bedrock?
+Amazon Bedrock is a fully managed service that gives access to foundation models — large pre-trained AI models — from various providers through a single AWS API. No need to build or train models from scratch.
+Think of it as — AWS marketplace for AI models. You pick a model, send it text, get intelligent response back.
+
+Foundation Models available on Bedrock:
+Anthropic Claude — conversational AI, reasoning, analysis. Most popular on Bedrock.
+Amazon Titan — AWS's own models for text, embeddings, images.
+Meta Llama — open source models from Meta.
+Mistral — efficient European AI models.
+Stability AI — image generation models.
+
+Key Bedrock concepts:
+Inference — sending input to a model and getting output back. You send a prompt, model returns a response.
+Prompt engineering — designing the input text carefully to get better outputs from the model. How you ask the question matters.
+Token — unit of text the model processes. Roughly 4 characters or 0.75 words. Models have token limits and cost is based on tokens used.
+Embeddings — converting text into numbers (vectors) that capture meaning. Similar texts have similar vectors. Used for semantic search.
+RAG — Retrieval Augmented Generation — instead of relying only on model's training data, fetch relevant documents first, include them in prompt, model answers based on those documents. More accurate and up to date answers.
+
+Basic Bedrock API call in Python:
+pythonimport boto3
+import json
+
+bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+
+# Call Claude model
+response = bedrock.invoke_model(
+    modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+    body=json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 1000,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Summarize this insurance policy document: ..."
+            }
+        ]
+    })
+)
+
+result = json.loads(response['body'].read())
+print(result['content'][0]['text'])
+
+RAG — Retrieval Augmented Generation:
+Most important Bedrock concept for Data Engineers!
+Problem — AI model only knows what it was trained on. Doesn't know your company's internal documents or recent data.
+Solution — RAG:
+User asks question
+    ↓
+Search your documents for relevant content (retrieval)
+    ↓
+Include retrieved content in prompt sent to model
+    ↓
+Model answers based on your actual documents
+    ↓
+More accurate, grounded response
+How it works technically:
+
+Store documents as embeddings in vector database
+When question comes — convert question to embedding
+Find similar document embeddings — these are relevant documents
+Send relevant documents + question to model
+Model generates answer based on your documents
+
+Bedrock Knowledge Bases — AWS managed RAG service. You give it your S3 documents, it handles embeddings, vector storage and retrieval automatically.
+
+Bedrock Agents:
+Agents can take actions — not just answer questions. They can call APIs, run queries, trigger workflows.
+Example — instead of just answering "what is the loss for policy P001" — an agent can:
+
+Understand the question
+Query Redshift for the data
+Format and return the answer
+
+This is where Lambda comes in — Lambda functions are the tools that agents use to take actions.
+User question
+    ↓
+Bedrock Agent reasons about what to do
+    ↓
+Calls Lambda function (tool) to fetch data
+    ↓
+Lambda queries Redshift or S3
+    ↓
+Returns data to agent
+    ↓
+Agent formats and returns answer to user
+
+How this connects to your Data Engineering work:
+Your Glue pipelines and Redshift data becomes the foundation for AI applications:
+Preparing data for RAG — cleaning and structuring documents in S3 so Bedrock Knowledge Bases can index them. This is pure Data Engineering work — your ETL skills apply directly!
+Feature pipelines for ML — your existing feature engineering work feeds ML models. Same concept applies to preparing data for AI models.
+Lambda as agent tools — your knowledge of Lambda, Step Functions and Redshift makes you valuable for building agent backends.
+
+What to say if Bedrock questions come up in interview:
+"I have been exploring Amazon Bedrock and understand the core concepts — foundation models, RAG for grounding AI responses in enterprise data, and Bedrock Agents for autonomous workflows. My strong foundation in AWS data services — Glue, Redshift, S3, Lambda — positions me well to build the data layer that powers Bedrock applications. Preparing and curating data for RAG pipelines is essentially ETL work which is my core strength. I am actively upskilling on the Gen AI layer and excited to apply my data engineering foundation in this space."
