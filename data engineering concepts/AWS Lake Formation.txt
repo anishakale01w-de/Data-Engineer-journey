@@ -1,0 +1,57 @@
+BLOCK 4 — AWS Lake Formation
+Priority: Good to Know ⭐
+
+What is Lake Formation?
+AWS Lake Formation is a service that makes it easy to set up, secure and manage a data lake on S3. Think of it as a security and governance layer on top of S3 and Glue.
+Without Lake Formation — S3 bucket policies and IAM roles control access. Difficult to manage fine grained permissions at table or column level.
+With Lake Formation — define permissions at database, table or even column level. Much more granular and easier to manage.
+
+Key concepts:
+Data Lake — central repository storing all structured and unstructured data at any scale on S3. Raw data stored as-is until needed.
+Data Catalog integration — Lake Formation works with Glue Data Catalog. Tables registered in Glue Data Catalog can be secured through Lake Formation.
+Fine grained access control:
+Without Lake Formation:
+User A can access entire S3 bucket
+
+With Lake Formation:
+User A can access only specific tables
+User B can access specific columns only
+User C can see all columns except salary column
+Column level security:
+sql-- User can query everything except sensitive columns
+GRANT SELECT ON TABLE employees
+EXCLUDE COLUMNS (salary, ssn)
+TO USER analyst_user;
+Row level security — filter rows based on user identity. Different users see different rows from same table.
+
+Lake Formation + Glue:
+Glue crawlers populate the Glue Data Catalog. Lake Formation secures those catalog tables. Glue ETL jobs respect Lake Formation permissions when reading data.
+S3 data
+    ↓ crawled by
+Glue Crawler
+    ↓ populates
+Glue Data Catalog
+    ↓ secured by
+Lake Formation permissions
+    ↓ accessed by
+Glue ETL jobs — only see what they're allowed to
+Athena queries — same permission model
+Redshift Spectrum — same permission model
+
+Partitioning and performance tuning in Lake Formation context:
+Register partitioned S3 data in Lake Formation — partitions are tracked and pruned automatically during queries.
+Use partition projection — define partition schema without running crawlers. Faster and cheaper for highly partitioned datasets.
+python# Partition projection example in Glue Data Catalog
+# Tells Athena/Glue where partitions are without crawling
+TableInput={
+    'Parameters': {
+        'projection.enabled': 'true',
+        'projection.valuation_date.type': 'date',
+        'projection.valuation_date.range': '2020-01-01,NOW',
+        'projection.valuation_date.format': 'yyyy-MM-dd',
+        'storage.location.template': 's3://bucket/data/valuation_date=${valuation_date}/'
+    }
+}
+
+What to say if Lake Formation comes up:
+"Lake Formation provides fine grained access control on top of the Glue Data Catalog — allowing column level and row level security on S3 data without complex IAM policies. In our Liberty Mutual project data governance was critical given the sensitive insurance data we handled. Lake Formation would have been the ideal layer to restrict which teams could access which tables and columns — for example restricting personally identifiable information to only authorized users while allowing data science teams access to aggregated features."
