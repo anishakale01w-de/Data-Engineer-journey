@@ -1,0 +1,173 @@
+BLOCK 1 — AWS Lambda
+Priority: Must Know ⭐
+
+What is AWS Lambda?
+Lambda is a serverless compute service — you write a function, AWS runs it. No servers to manage, no infrastructure to worry about. You only pay for the time your function actually runs — charged per millisecond.
+Think of it as — write a small Python function, upload it to AWS, tell it when to run, AWS handles everything else.
+
+Key concepts:
+Serverless — no EC2, no server management. AWS manages all infrastructure automatically.
+Event driven — Lambda runs in response to events. Something triggers it, it runs, it stops. Not always running like a server.
+Stateless — each Lambda invocation is independent. No memory of previous runs. Store state externally in S3, DynamoDB or RDS.
+Timeout — maximum 15 minutes per invocation. Not suitable for long running jobs — use Glue or Fargate for those.
+Cold start — first invocation takes slightly longer because AWS needs to initialize the container. Subsequent invocations are faster — container is warm.
+
+Lambda vs Glue vs Fargate — when to use which:
+Lambda:
+
+Short tasks under 15 minutes
+Event driven triggers
+Lightweight processing
+API calls, notifications, file checks
+Examples — check if S3 file arrived, send SNS alert, trigger Glue job, validate small dataset
+
+Glue:
+
+Large scale ETL processing
+PySpark distributed processing
+Hours of processing time
+Examples — transform millions of rows, migrate Teradata to Redshift
+
+Fargate:
+
+Containerized workloads
+Custom dependencies not available in Lambda
+Medium duration tasks
+Examples — your Python feature engineering modules with pandas/numpy
+
+
+How Lambda fits in your existing architecture:
+You already use Lambda indirectly through Step Functions and SNS. Here is how Lambda connects to services you know:
+S3 file arrives
+    ↓ triggers
+Lambda function
+    ↓ validates file
+    ↓ triggers
+Glue ETL job
+    ↓ on completion
+Step Functions
+    ↓ orchestrates
+Redshift stored procedures
+    ↓ on success
+SNS notification to batch team
+Lambda is the glue between events and actions — pun intended!
+
+Basic Lambda function in Python:
+pythonimport json
+import boto3
+
+def lambda_handler(event, context):
+    # event — contains trigger data
+    # context — contains runtime info like timeout remaining
+
+    # Example — triggered by S3 file upload
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = event['Records'][0]['s3']['object']['key']
+
+    print(f"File arrived: s3://{bucket}/{key}")
+
+    # Trigger Glue job
+    glue = boto3.client('glue')
+    glue.start_job_run(
+        JobName='my-glue-job',
+        Arguments={
+            '--valuation_date': '2024-01-01',
+            '--source_file': key
+        }
+    )
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Glue job triggered successfully!')
+    }
+
+Lambda triggers — what can invoke Lambda:
+S3 — file uploaded to bucket triggers Lambda
+API Gateway — HTTP request triggers Lambda
+EventBridge — scheduled or event based trigger
+SNS — message published triggers Lambda
+SQS — message in queue triggers Lambda
+Step Functions — Lambda as a step in workflow
+CloudWatch — alarm or scheduled event triggers Lambda
+DynamoDB streams — table change triggers Lambda
+
+Lambda integrations from JD:
+Lambda + API Gateway:
+API Gateway receives HTTP request, passes to Lambda, Lambda processes and returns response. Used for building REST APIs without servers.
+Client → API Gateway → Lambda → process → return response
+Lambda + SQS:
+Messages queue up in SQS, Lambda polls queue and processes messages. Good for decoupling systems and handling spikes.
+Producer → SQS queue → Lambda processes messages → target
+Lambda + EventBridge:
+EventBridge triggers Lambda on schedule or when specific AWS events occur.
+python# EventBridge rule — run Lambda every day at midnight
+# Cron expression: 0 0 * * ? *
+Lambda + Step Functions:
+Lambda as a task step inside Step Functions workflow. Step Functions calls Lambda, waits for result, continues to next step.
+json{
+    "Type": "Task",
+    "Resource": "arn:aws:lambda:us-east-1:123:function:validate-file",
+    "Next": "StartGlueJob"
+}
+Lambda + SNS:
+Lambda publishes to SNS topic to send notifications. Or SNS triggers Lambda when message arrives.
+
+Lambda layers:
+Lambda has limited built-in libraries. For extra libraries like pandas or numpy — use layers.
+Layer is a zip file containing libraries that Lambda can use. Instead of packaging libraries in every function — create one layer, attach to multiple functions.
+python# Without layer — pandas not available by default
+# With pandas layer attached — this works!
+import pandas as pd
+
+def lambda_handler(event, context):
+    df = pd.read_csv('/tmp/data.csv')
+    return df.shape
+
+Lambda environment variables:
+Store configuration and secrets as environment variables — don't hardcode them in function.
+pythonimport os
+
+def lambda_handler(event, context):
+    db_host = os.environ['DB_HOST']
+    db_password = os.environ['DB_PASSWORD']
+    environment = os.environ['ENVIRONMENT']
+
+Lambda cold start — important for interviews:
+First invocation — AWS creates container, loads runtime, loads your code, runs function. Slow — 100ms to few seconds.
+Subsequent invocations — container already warm, runs immediately. Fast.
+How to reduce cold starts:
+
+Use Provisioned Concurrency — keeps containers warm permanently
+Keep deployment package small — less to load
+Avoid heavy imports at function level — import inside handler if not always needed
+Use Lambda SnapStart for Java functions
+
+
+Lambda concurrency:
+Multiple events can trigger Lambda simultaneously. Each invocation runs in separate container — fully parallel.
+Default concurrency limit — 1000 per region across all functions.
+Reserved concurrency — guarantee minimum containers for critical functions.
+Provisioned concurrency — pre-warm containers to eliminate cold starts.
+
+Common Lambda interview questions:
+What is Lambda?
+Serverless event driven compute service. Write function, define trigger, AWS handles infrastructure. Pay only for execution time.
+What is cold start?
+Delay on first invocation while AWS initializes container. Subsequent invocations use warm container and are faster.
+Lambda vs EC2?
+EC2 — always running server, you manage everything, pay always.
+Lambda — runs only when triggered, AWS manages everything, pay per invocation.
+Lambda vs Glue?
+Lambda — short tasks under 15 minutes, event driven, lightweight.
+Glue — large scale ETL, PySpark, hours of processing, scheduled or triggered.
+What triggers Lambda?
+S3, API Gateway, EventBridge, SNS, SQS, Step Functions, CloudWatch, DynamoDB streams.
+What is Lambda timeout?
+Maximum 15 minutes. Default 3 seconds — must increase for longer tasks.
+How do you pass data to Lambda?
+Through event object — contains trigger data. Through environment variables — configuration. Through S3 — large files.
+How do you handle errors in Lambda?
+Try/except in function code. Dead letter queue — failed invocations go to SQS or SNS for investigation. Step Functions Catch block when Lambda is a workflow step.
+
+Connect to your project:
+"In our Liberty Mutual architecture we used Lambda for lightweight event driven tasks — like checking if source files had arrived in S3 before triggering the main Glue pipeline. Lambda would validate the file, check row counts, and either trigger the Glue job via Step Functions or send an SNS failure alert if file was missing or malformed. This kept our Glue jobs clean and focused on transformation — Lambda handled the orchestration triggers and lightweight validation."
