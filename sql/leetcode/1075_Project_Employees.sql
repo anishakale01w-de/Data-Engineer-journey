@@ -82,3 +82,22 @@ select a.project_id, round(avg(b.experience_years), 2) as average_years
 from project a 
 inner join employee b 
 on a.employee_id  = b.employee_id  GROUP BY a.project_id
+
+-- ============================================
+-- KEY LEARNING
+-- ============================================
+-- 1. ROUND(value, 2) → rounds to 2 decimal places
+--    Always use when problem says "rounded to N digits"
+--
+-- 2. AVG() with GROUP BY → calculates average per group
+--    Pattern: SELECT group_col, AVG(measure_col)
+--             FROM table GROUP BY group_col
+--
+-- 3. INNER JOIN was correct here because employee_id
+--    in Project is a FOREIGN KEY to Employee table
+--    → guaranteed every employee exists → no NULL risk
+--    Use INNER JOIN when relationship is guaranteed
+--    Use LEFT JOIN when you want to keep unmatched rows
+--
+-- 4. Table aliases (a, b) → cleaner code when joining
+--    Good habit for readability in complex queries
