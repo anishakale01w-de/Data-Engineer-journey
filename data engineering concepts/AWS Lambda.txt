@@ -173,4 +173,38 @@ Connect to your project:
 "In our Liberty Mutual architecture we used Lambda for lightweight event driven tasks — like checking if source files had arrived in S3 before triggering the main Glue pipeline. Lambda would validate the file, check row counts, and either trigger the Glue job via Step Functions or send an SNS failure alert if file was missing or malformed. This kept our Glue jobs clean and focused on transformation — Lambda handled the orchestration triggers and lightweight validation."
 
 Project related usecase 
+Questions to ask in your other chat:
+
+For Use case 1 — Triggering State Machine:
+
+What triggered the Lambda function — was it S3 file arrival, EventBridge schedule, API call or something else?
+What did the Lambda function do exactly — did it just start the state machine or did it do any validation or processing before triggering?
+What parameters or inputs did it pass to the state machine when triggering?
+What was the name or purpose of the state machine it triggered?
+
+
+For Use case 2 — Notification to model team:
+
+Was this Lambda a separate function or part of the state machine as a task step?
+What triggered this Lambda — was it a Step Functions task, SNS event or something else?
+What information did the notification contain — just a success message or details like record counts, valuation date, pipeline name?
+Was it SNS email notification or some other channel like Teams or Slack?
+
+
+For Use case 3 — Desired capacity Lambda:
+
+What triggered this Lambda — start of pipeline or a schedule?
+What exactly did it do — did it increase Auto Scaling group desired capacity to a number and then set back to zero after pipeline?
+Which EC2 instances or Auto Scaling group was it managing — was this related to Redshift, a processing cluster or something else?
+Why was EC2 needed — what was running on it that needed scaling?
+
+
+General Lambda questions to ask:
+
+What runtime was used — Python 3.x?
+What IAM permissions did the Lambda have — what AWS services could it access?
+What was the approximate timeout set for each Lambda?
+Were environment variables used — what configuration was stored there?
+Were there any layers used — any custom libraries?
+How were errors handled — dead letter queue, try/except, Step Functions catch?
 
