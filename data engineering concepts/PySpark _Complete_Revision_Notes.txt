@@ -333,3 +333,4 @@ When one partition has much more data than others. One worker gets overloaded wh
 
 10. Interview Answer — connect to your project
 "In our Glue jobs we follow a standard pattern. We read raw data as DynamicFrame from the Glue catalog because source data from Teradata and Denodo sometimes had inconsistent schemas — DynamicFrame handles that without failing. We resolve any choice types, then convert to DataFrame using toDF() for our transformation logic — filters, joins, aggregations using PySpark. We use push down predicates to leverage S3 partitioning and read only relevant data. Before writing output we coalesce to control file count on S3 and avoid small file problems. Then convert back to DynamicFrame before writing to Redshift. For jobs that process the same dataset multiple times we cache to avoid recomputation. This pattern combined with incremental loads reduced our Glue job runtime from 18 hours to 8-9 hours."
+--revised 7th july
