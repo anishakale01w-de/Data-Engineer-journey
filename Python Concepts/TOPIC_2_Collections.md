@@ -45,4 +45,5 @@ for order in order_ids:
 
 2. Tuple
 Formal Definition: A tuple is an ordered, immutable collection of items enclosed in round brackets (). Once created, its elements cannot be changed, added, or removed. Tuples are generally faster than lists and used to store fixed/constant data.
+--revised 7th july
 
