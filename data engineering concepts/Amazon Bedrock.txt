@@ -95,3 +95,4 @@ Lambda as agent tools — your knowledge of Lambda, Step Functions and Redshift 
 
 What to say if Bedrock questions come up in interview:
 "I have been exploring Amazon Bedrock and understand the core concepts — foundation models, RAG for grounding AI responses in enterprise data, and Bedrock Agents for autonomous workflows. My strong foundation in AWS data services — Glue, Redshift, S3, Lambda — positions me well to build the data layer that powers Bedrock applications. Preparing and curating data for RAG pipelines is essentially ETL work which is my core strength. I am actively upskilling on the Gen AI layer and excited to apply my data engineering foundation in this space."
+--revised 7th july
