@@ -68,3 +68,5 @@ Use when: statistical calculations, standard deviation
 
 Quick memory tricks:
 FunctionTrickABSAlways Become Safe (no negatives)ROUNDRounds to nearestCEILCeiling = upFLOORFloor = downMODMath remainderPOWERPower = multiply itselfSQRTSquare Root
+
+--revised 7th july
