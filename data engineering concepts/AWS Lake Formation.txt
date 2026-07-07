@@ -55,3 +55,4 @@ TableInput={
 
 What to say if Lake Formation comes up:
 "Lake Formation provides fine grained access control on top of the Glue Data Catalog — allowing column level and row level security on S3 data without complex IAM policies. In our Liberty Mutual project data governance was critical given the sensitive insurance data we handled. Lake Formation would have been the ideal layer to restrict which teams could access which tables and columns — for example restricting personally identifiable information to only authorized users while allowing data science teams access to aggregated features."
+--revised 7th july
