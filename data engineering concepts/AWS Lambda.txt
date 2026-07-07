@@ -210,3 +210,5 @@ Were environment variables used — what configuration was stored there?
 Were there any layers used — any custom libraries?
 How were errors handled — dead letter queue, try/except, Step Functions catch?
 
+--revised 7th july
+
