@@ -45,4 +45,5 @@ OR AVG(a.salary) IS NULL;
 
 sqlHAVING COUNT(a.emp_id) > 5 
 AND AVG(a.salary) > 50000;
+--revised
 */
