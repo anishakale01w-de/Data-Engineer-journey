@@ -260,3 +260,4 @@ Yes using Glue Connections with VPC configuration and AWS Direct Connect or VPN.
 Save this to your notes file! This covers everything an Infosys interviewer would ask about Glue based on your resume. 💪
 
 Ready to do mock interview round next? That's the most important thing before tomorrow! 👇
+--revised 7th july
