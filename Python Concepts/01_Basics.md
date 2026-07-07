@@ -96,3 +96,4 @@ print(policy_start_date)                 # Output: 2024-01-15
 
 6.2 datetime — Stores Date + Time together
 Definition: Stores year, month, day, hour, minute, second and microsecond. Most commonly used in DE pipelines.
+--revised 7th july
